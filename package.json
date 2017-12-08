@@ -13,7 +13,8 @@
   }],
   "license": "MIT",
   "dependencies": {
-    "request": "^2.79.0"
+    "request": "^2.79.0",
+    "node-cache": "^4.1.1"
   },
   "engines": {
     "node": ">=0.12.0",

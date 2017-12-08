@@ -1,334 +1,278 @@
-/*
-{
-    "accessories": [
-      {
-        "accessory": "BGH-Smart",
-        "name": "Accesory Name",
-        "email": "email@domain.com",
-        "password": "password",
-        "deviceName": "Device name in Solidmation",
-        "homeId": "12345",
-        "deviceId": "12345"
-      }
-    ],
-}
-
-*/
-
-
-var Service, Characteristic;
-var request = require("request");
+let Service, Characteristic;
 const lib = require('./lib/bgh');
+const nodeCache = require('node-cache');
+const STATUS = "status";
 
-module.exports = function(homebridge){
-  Service = homebridge.hap.Service;
-  Characteristic = homebridge.hap.Characteristic;
+module.exports = function (homebridge) {
+    Service = homebridge.hap.Service;
+    Characteristic = homebridge.hap.Characteristic;
 
-  homebridge.registerAccessory("homebridge-bgh-smart", "BGH-Smart", BghSmart);
+    homebridge.registerAccessory("homebridge-bgh-smart", "BGH-Smart", BghSmart);
 };
 
 
 function BghSmart(log, config) {
-  this.log = log;
+    this.log = log;
 
-  this.name = config.name;
-  this.log(this.name);
+    this.name = config.name;
+    this.log(this.name);
 
-  this.device = new lib.Device()
-  this.characteristicManufacturer = this.device.getDeviceManufacturer()
-  this.characteristicModel = this.device.getDeviceModel()
-  this.characteristicSerialNumber = this.device.getSerialNumber()
-  this.device.setHomeId(config.homeId)
-  this.device.setDeviceId(config.deviceId)
-  var _this = this
-  this.device.login(config.email, config.password)
-    .then(() => {
-      this.device.getStatus()
-        .then(data => {
-          _this.characteristicManufacturer = _this.device.getDeviceManufacturer()
-          _this.characteristicModel = _this.device.getDeviceModel()
-          _this.characteristicSerialNumber = _this.device.getSerialNumber()
-        })
-        .catch(err => {
+    this.device = new lib.Device();
+    this.characteristicManufacturer = this.device.getDeviceManufacturer();
+    this.characteristicModel = this.device.getDeviceModel();
+    this.characteristicSerialNumber = this.device.getSerialNumber();
+    this.device.setHomeId(config.homeId);
+    this.device.setDeviceId(config.deviceId);
 
-        })
-    })
-    .catch((err) => {
-    })
+    let that = this;
+    this.device.login(config.email, config.password)
+        .then(() => {
+            this.device.getStatus()
+                .then(data => {
+                    that.characteristicManufacturer = that.device.getDeviceManufacturer();
+                    that.characteristicModel = that.device.getDeviceModel();
+                    that.characteristicSerialNumber = that.device.getSerialNumber();
+                })
+                .catch(err => {
 
-  //Characteristic.TemperatureDisplayUnits.CELSIUS = 0;
-  //Characteristic.TemperatureDisplayUnits.FAHRENHEIT = 1;
-  this.temperatureDisplayUnits = Characteristic.TemperatureDisplayUnits.CELSIUS;
+                })
+        }).catch((err) => {
+    });
 
-  this.temperature = 19;
-  this.relativeHumidity = 0.50;
+    this.timer;
+    this.targetTemperature;
+    this.targetMode;
+    this.cache = new nodeCache({stdTTL: 30, checkPeriod: 5, useClones: false});
+    this.temperatureDisplayUnits = Characteristic.TemperatureDisplayUnits.CELSIUS;
 
-
-  // The value property of CurrentHeatingCoolingState must be one of the following:
-  //Characteristic.CurrentHeatingCoolingState.OFF = 0;
-  //Characteristic.CurrentHeatingCoolingState.HEAT = 1;
-  //Characteristic.CurrentHeatingCoolingState.COOL = 2;
-  this.heatingCoolingState = Characteristic.CurrentHeatingCoolingState.OFF;
-
-  this.targetTemperature = 21;
-  this.targetRelativeHumidity = 0.50;
-
-  this.heatingThresholdTemperature = 25;
-  this.coolingThresholdTemperature = 5;
-
-  // The value property of TargetHeatingCoolingState must be one of the following:
-  //Characteristic.TargetHeatingCoolingState.OFF = 0;
-  //Characteristic.TargetHeatingCoolingState.HEAT = 1;
-  //Characteristic.TargetHeatingCoolingState.COOL = 2;
-  //Characteristic.TargetHeatingCoolingState.AUTO = 3;
-  this.targetHeatingCoolingState = Characteristic.TargetHeatingCoolingState.OFF;
+    this.thermostatService = new Service.Thermostat(this.name);
 }
 
 BghSmart.prototype = {
+    identify(callback) {
+        this.log("Identify requested!");
 
-  //Start
-  identify: function(callback) {
-    this.log("Identify requested!");
+        callback(null);
+    },
 
-    callback(null);
-  },
-  // Required
-  getCurrentHeatingCoolingState: function(callback) {
-    this.log("getCurrentHeatingCoolingState from:", this.apiroute+"/status");
+    getStatus(callback) {
+        let status = this.cache.get(STATUS);
 
-    var MODE = lib.MODE
+        if (status) {
+            if (status === "fetching") {
+                let that = this;
 
-    this.device.getStatus()
-      .then(data => {
-        switch(data.modeId) {
-          case MODE.COOL:
-            this.targetHeatingCoolingState = Characteristic.TargetHeatingCoolingState.COOL;
-            break;
-          case MODE.HEAT:
-            this.targetHeatingCoolingState = Characteristic.TargetHeatingCoolingState.HEAT;
-            break;
-          case MODE.AUTO:
-            this.targetHeatingCoolingState = Characteristic.TargetHeatingCoolingState.AUTO;
-            break;
-          case MODE.OFF:
-            this.targetHeatingCoolingState = Characteristic.TargetHeatingCoolingState.OFF;
-            break;
-          default:
-            this.targetHeatingCoolingState = Characteristic.TargetHeatingCoolingState.OFF;
-            break;
-          }
+                setTimeout(() => that.getStatus(callback), 1000);
+            } else {
+                callback(null, status);
+            }
+        } else {
+            this.getStatusFromDevice(callback);
+        }
+    },
 
-          callback(null, this.targetHeatingCoolingState);
-      })
-      .catch(err => {
-        callback(err);
-      })
+    getStatusFromDevice(callback) {
+        this.log("Getting status from device");
 
-  },
-  setCurrentHeatingCoolingState: function(value, callback) {
-    this.log("TO BE REMOVED BECAUSE USELESS setCurrentHeatingCoolingState:", value);
-    this.heatingCoolingState = value;
-    var error = null;
-    callback(error);
-  },
-  getTargetHeatingCoolingState: function(callback) {
-    this.log("getTargetHeatingCoolingState:", this.targetHeatingCoolingState);
-    this.getCurrentHeatingCoolingState(callback);
-  },
-  setTargetHeatingCoolingState: function(value, callback) {
-    this.log("setTargetHeatingCoolingState from/to:", this.targetHeatingCoolingState, value);
-    this.targetHeatingCoolingState = value;
+        this.cache.set(STATUS, "fetching");
 
-    var MODE = lib.MODE
+        let MODE = lib.MODE;
 
-    switch(this.targetHeatingCoolingState) {
-      case Characteristic.TargetHeatingCoolingState.OFF:
-        this.device.turnOff();
-        callback(null, this.targetHeatingCoolingState);
-        break;
-      case Characteristic.TargetHeatingCoolingState.HEAT://"COMFORT"
-        this.device.setMode(this.targetTemperature, MODE.HEAT)
-        callback(null, this.targetHeatingCoolingState);
-        break;
-      case Characteristic.TargetHeatingCoolingState.AUTO://"COMFORT_MINUS_ONE"
-        this.device.setMode(this.targetTemperature, MODE.AUTO)
-        callback(null, this.targetHeatingCoolingState);
-        break;
-      case Characteristic.TargetHeatingCoolingState.COOL://"COMFORT_MINUS_TWO"
-        this.device.setMode(this.targetTemperature, MODE.COOL)
-        callback(null, this.targetHeatingCoolingState);
-        break;
-      default:
-        this.log("Not handled case:", json.state);
-        break;
+        let currentState = {
+            heatingCoolingState: Characteristic.CurrentHeatingCoolingState.OFF,
+            targetHeatingCoolingState: Characteristic.TargetHeatingCoolingState.OFF,
+            temperature: null,
+            targetTemperature: null
+        };
+
+        this.device.getStatus()
+            .then(status => {
+                switch (status.modeId) {
+                    case MODE.COOL:
+                        currentState.heatingCoolingState = Characteristic.TargetHeatingCoolingState.COOL;
+                        currentState.targetHeatingCoolingState = Characteristic.TargetHeatingCoolingState.COOL;
+                        break;
+                    case MODE.HEAT:
+                        currentState.heatingCoolingState = Characteristic.TargetHeatingCoolingState.HEAT;
+                        currentState.targetHeatingCoolingState = Characteristic.TargetHeatingCoolingState.HEAT;
+                        break;
+                    case MODE.AUTO:
+                        currentState.heatingCoolingState = Characteristic.TargetHeatingCoolingState.AUTO;
+                        currentState.targetHeatingCoolingState = Characteristic.TargetHeatingCoolingState.AUTO;
+                        break;
+                    default:
+                        currentState.heatingCoolingState = Characteristic.TargetHeatingCoolingState.OFF;
+                        currentState.targetHeatingCoolingState = Characteristic.TargetHeatingCoolingState.OFF;
+                        break;
+                }
+
+                currentState.temperature = status.temperature;
+                currentState.targetTemperature = status.targetTemperature;
+
+                this.cache.set(STATUS, currentState);
+
+                callback(null, currentState);
+
+                this.targetMode = currentState.heatingCoolingState;
+                this.targetTemperature = currentState.targetTemperature;
+            }).catch(error => callback(error));
+    },
+
+    setStatusToDevice(mode, temperature, callback) {
+        this.log("Received new status, mode=%s, temperature=%s", mode, temperature);
+
+        this.cache.del(STATUS);
+
+        this.targetMode = mode;
+        this.targetTemperature = temperature;
+
+        clearTimeout(this.timer);
+
+        let that = this;
+
+        this.timer = setTimeout(() => {
+            let targetMode = that.targetMode;
+            let targetTemperature = that.targetTemperature;
+
+            that.log("Setting status to device, targetMode=%s, targetTemperature=%s", targetMode, targetTemperature);
+
+            let MODE = lib.MODE;
+
+            switch (targetMode) {
+                case Characteristic.TargetHeatingCoolingState.OFF:
+                    that.device.turnOff();
+                    break;
+                case Characteristic.TargetHeatingCoolingState.HEAT:
+                    that.device.setMode(targetTemperature, MODE.HEAT);
+                    break;
+                case Characteristic.TargetHeatingCoolingState.AUTO:
+                    that.device.setMode(targetTemperature, MODE.AUTO);
+                    break;
+                case Characteristic.TargetHeatingCoolingState.COOL:
+                    that.device.setMode(targetTemperature, MODE.COOL);
+                    break;
+                default:
+                    that.log("Not handled state:", targetMode);
+                    break;
+            }
+
+            that.thermostatService.getCharacteristic(Characteristic.CurrentHeatingCoolingState)
+                .updateValue(targetMode);
+
+            that.thermostatService.getCharacteristic(Characteristic.TargetHeatingCoolingState)
+                .updateValue(targetMode);
+
+            that.thermostatService.getCharacteristic(Characteristic.TargetTemperature)
+                 .updateValue(targetTemperature);
+        }, 2000);
+
+        callback(null);
+    },
+
+    getCurrentHeatingCoolingState(callback) {
+        this.getStatus((error, status) => {
+            if (error) {
+                callback(error);
+            } else {
+                callback(null, status.heatingCoolingState);
+            }
+        });
+    },
+
+    getTargetHeatingCoolingState(callback) {
+        this.getStatus((error, status) => {
+            if (error) {
+                callback(error);
+            } else {
+                callback(null, status.targetHeatingCoolingState);
+            }
+        });
+    },
+
+    getCurrentTemperature(callback) {
+        this.getStatus((error, status) => {
+            if (error) {
+                callback(error);
+            } else {
+                callback(null, status.temperature);
+            }
+        });
+    },
+
+    getTargetTemperature(callback) {
+        this.getStatus((error, status) => {
+            if (error) {
+                callback(error);
+            } else {
+                callback(null, status.targetTemperature);
+            }
+        });
+    },
+
+    getTemperatureDisplayUnits(callback) {
+        callback(null, this.temperatureDisplayUnits);
+    },
+
+    setTargetHeatingCoolingState(targetMode, callback) {
+        this.setStatusToDevice(targetMode, this.targetTemperature, callback);
+    },
+
+    setTargetTemperature(targetTemperature, callback) {
+        this.setStatusToDevice(this.targetMode, targetTemperature, callback);
+    },
+
+    setTemperatureDisplayUnits(value, callback) {
+        this.log("setTemperatureDisplayUnits(%s)", value);
+        this.temperatureDisplayUnits = value;
+        callback(null);
+    },
+
+    fromCelsiustoDisplayUnit(value) {
+        if (this.temperatureDisplayUnits === Characteristic.TemperatureDisplayUnits.FARENHEIT) {
+            return (value - 32)/1.8;
+        } else {
+            return value;
+        }
+    },
+
+    fromDisplayUnitToCelsius(value) {
+        if (this.temperatureDisplayUnits === Characteristic.TemperatureDisplayUnits.FARENHEIT) {
+            return (1.8 * value) + 32;
+        } else {
+            return value;
+        }
+    },
+
+    getServices() {
+        let informationService = new Service.AccessoryInformation()
+            .setCharacteristic(Characteristic.Manufacturer, this.characteristicManufacturer)
+            .setCharacteristic(Characteristic.Model, this.characteristicModel)
+            .setCharacteristic(Characteristic.SerialNumber, this.characteristicSerialNumber);
+
+        // Required
+        this.thermostatService
+            .getCharacteristic(Characteristic.CurrentHeatingCoolingState)
+            .on('get', this.getCurrentHeatingCoolingState.bind(this));
+
+        this.thermostatService
+            .getCharacteristic(Characteristic.TargetHeatingCoolingState)
+            .on('get', this.getTargetHeatingCoolingState.bind(this))
+            .on('set', this.setTargetHeatingCoolingState.bind(this));
+
+        this.thermostatService
+            .getCharacteristic(Characteristic.CurrentTemperature)
+            .on('get', this.getCurrentTemperature.bind(this));
+
+        this.thermostatService
+            .getCharacteristic(Characteristic.TargetTemperature)
+            .on('get', this.getTargetTemperature.bind(this))
+            .on('set', this.setTargetTemperature.bind(this));
+
+        this.thermostatService
+            .getCharacteristic(Characteristic.TemperatureDisplayUnits)
+            .on('get', this.getTemperatureDisplayUnits.bind(this))
+            .on('set', this.setTemperatureDisplayUnits.bind(this));
+
+        return [informationService, this.thermostatService];
     }
-
-  },
-  getCurrentTemperature: function(callback) {
-    this.log("getCurrentTemperature from:", this.apiroute+"/status");
-
-    this.device.getStatus()
-      .then(status => {
-        this.temperature = status.temperature !== null ? status.temperature : status.targetTemperature;
-        callback(null, this.temperature);
-      })
-      .catch(err => {
-        callback(err);
-      })
-  },
-  getTargetTemperature: function(callback) {
-    this.log("getTargetTemperature from:", this.apiroute+"/status");
-
-    this.device.getStatus()
-      .then(status => {
-        this.targetTemperature = status.targetTemperature;
-        callback(null, this.targetTemperature);
-      })
-      .catch(err => {
-        callback(err);
-      })
-  },
-
-  setTargetTemperature: function(temperature, callback) {
-    this.log("setTargetTemperature from:", "/targetTemperature/"+temperature);
-    this.log("setTargetTemperature from:", this.targetHeatingCoolingState)
-
-    var MODE = lib.MODE
-    this.targetTemperature = temperature;
-    this.device.setMode(this.targetTemperature, MODE.NO_CHANGE);
-    callback(null, this.targetTemperature);
-    /*
-    switch( this.targetHeatingCoolingState ) {
-      case Characteristic.TargetHeatingCoolingState.COOL:
-        this.device.setMode(temperature, MODE.COOL)
-        callback(null, temperature);
-        break;
-      case Characteristic.TargetHeatingCoolingState.HEAT:
-        this.device.setMode(temperature, MODE.HEAT)
-        callback(null, temperature);
-        break;
-      case Characteristic.TargetHeatingCoolingState.AUTO:
-        this.device.setMode(temperature, MODE.AUTO)
-        callback(null, temperature);
-        break;
-      default:
-        this.device.setMode(temperature, MODE.NO_CHANGE)
-        callback(null, temperature);
-        break;
-    }*/
-
-
-  },
-  getTemperatureDisplayUnits: function(callback) {
-    this.log("getTemperatureDisplayUnits:", this.temperatureDisplayUnits);
-    var error = null;
-    callback(error, this.temperatureDisplayUnits);
-  },
-  setTemperatureDisplayUnits: function(value, callback) {
-    this.log("setTemperatureDisplayUnits from %s to %s", this.temperatureDisplayUnits, value);
-    this.temperatureDisplayUnits = value;
-    var error = null;
-    callback(error);
-  },
-
-  // Optional
-  getCurrentRelativeHumidity: function(callback) {
-    this.log("getCurrentRelativeHumidity from:", this.apiroute+"/status");
-
-    var error = null;
-    callback(error, this.relativeHumidity);
-  },
-  getTargetRelativeHumidity: function(callback) {
-    this.log("getTargetRelativeHumidity:", this.targetRelativeHumidity);
-    var error = null;
-    callback(error, this.targetRelativeHumidity);
-  },
-  setTargetRelativeHumidity: function(value, callback) {
-    this.log("setTargetRelativeHumidity from/to :", this.targetRelativeHumidity, value);
-    this.targetRelativeHumidity = value;
-    var error = null;
-    callback(error);
-  },
-/*  getCoolingThresholdTemperature: function(callback) {
-    this.log("getCoolingThresholdTemperature: ", this.coolingThresholdTemperature);
-    var error = null;
-    callback(error, this.coolingThresholdTemperature);
-  },
-*/  getHeatingThresholdTemperature: function(callback) {
-    this.log("getHeatingThresholdTemperature :" , this.heatingThresholdTemperature);
-    var error = null;
-    callback(error, this.heatingThresholdTemperature);
-  },
-  getName: function(callback) {
-    this.log("getName :", this.name);
-    var error = null;
-    callback(error, this.name);
-  },
-
-  getServices: function() {
-
-    // you can OPTIONALLY create an information service if you wish to override
-    // the default values for things like serial number, model, etc.
-    var informationService = new Service.AccessoryInformation();
-
-    informationService
-      .setCharacteristic(Characteristic.Manufacturer, this.characteristicManufacturer)
-      .setCharacteristic(Characteristic.Model, this.characteristicModel)
-      .setCharacteristic(Characteristic.SerialNumber, this.characteristicSerialNumber);
-
-    var thermostatService = new Service.Thermostat(this.name);
-
-    // Required Characteristics
-    thermostatService
-      .getCharacteristic(Characteristic.CurrentHeatingCoolingState)
-      .on('get', this.getCurrentHeatingCoolingState.bind(this))
-      .on('set', this.setCurrentHeatingCoolingState.bind(this));
-
-    thermostatService
-      .getCharacteristic(Characteristic.TargetHeatingCoolingState)
-      .on('get', this.getTargetHeatingCoolingState.bind(this))
-      .on('set', this.setTargetHeatingCoolingState.bind(this));
-
-    thermostatService
-      .getCharacteristic(Characteristic.CurrentTemperature)
-      .on('get', this.getCurrentTemperature.bind(this));
-
-    thermostatService
-      .getCharacteristic(Characteristic.TargetTemperature)
-      .on('get', this.getTargetTemperature.bind(this))
-      .on('set', this.setTargetTemperature.bind(this));
-
-    thermostatService
-      .getCharacteristic(Characteristic.TemperatureDisplayUnits)
-      .on('get', this.getTemperatureDisplayUnits.bind(this))
-      .on('set', this.setTemperatureDisplayUnits.bind(this));
-
-    // Optional Characteristics
-    /*
-    thermostatService
-      .getCharacteristic(Characteristic.CurrentRelativeHumidity)
-      .on('get', this.getCurrentRelativeHumidity.bind(this));
-
-    thermostatService
-      .getCharacteristic(Characteristic.TargetRelativeHumidity)
-      .on('get', this.getTargetRelativeHumidity.bind(this))
-      .on('set', this.setTargetRelativeHumidity.bind(this));
-    */
-    /*
-    thermostatService
-      .getCharacteristic(Characteristic.CoolingThresholdTemperature)
-      .on('get', this.getCoolingThresholdTemperature.bind(this));
-    */
-    /*
-    thermostatService
-      .getCharacteristic(Characteristic.HeatingThresholdTemperature)
-      .on('get', this.getHeatingThresholdTemperature.bind(this));
-    */
-
-    thermostatService
-      .getCharacteristic(Characteristic.Name)
-      .on('get', this.getName.bind(this));
-
-    return [informationService, thermostatService];
-  }
 };
