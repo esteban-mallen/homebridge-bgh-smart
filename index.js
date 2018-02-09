@@ -115,7 +115,12 @@ BghSmart.prototype = {
 
                 this.targetMode = currentState.heatingCoolingState;
                 this.targetTemperature = currentState.targetTemperature;
-            }).catch(error => callback(error));
+            }).catch(error => {
+            callback(error);
+
+            this.log("Failed getting status");
+            this.cache.del(STATUS);
+        });
     },
 
     setStatusToDevice(mode, temperature, callback) {
@@ -163,7 +168,7 @@ BghSmart.prototype = {
                 .updateValue(targetMode);
 
             that.thermostatService.getCharacteristic(Characteristic.TargetTemperature)
-                 .updateValue(targetTemperature);
+                .updateValue(targetTemperature);
         }, 2000);
 
         callback(null);
@@ -229,7 +234,7 @@ BghSmart.prototype = {
 
     fromCelsiustoDisplayUnit(value) {
         if (this.temperatureDisplayUnits === Characteristic.TemperatureDisplayUnits.FARENHEIT) {
-            return (value - 32)/1.8;
+            return (value - 32) / 1.8;
         } else {
             return value;
         }
