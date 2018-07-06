@@ -39,13 +39,17 @@ function BghSmart(log, config) {
         }).catch((err) => {
     });
 
-    this.timer;
+    this.autoRefreshEnabled = config.autoRefreshEnabled | true;
+    this.refreshTimer;
+    this.requestTimer;
     this.targetTemperature;
     this.targetMode;
     this.cache = new nodeCache({stdTTL: 30, checkPeriod: 5, useClones: false});
     this.temperatureDisplayUnits = Characteristic.TemperatureDisplayUnits.CELSIUS;
 
     this.thermostatService = new Service.Thermostat(this.name);
+
+    this.autoRefresh();
 }
 
 BghSmart.prototype = {
@@ -55,7 +59,9 @@ BghSmart.prototype = {
         callback(null);
     },
 
-    getStatus(callback) {
+    getStatus(callback, silent) {
+        this.log.debug("Getting status");
+
         let status = this.cache.get(STATUS);
 
         if (status) {
@@ -67,12 +73,12 @@ BghSmart.prototype = {
                 callback(null, status);
             }
         } else {
-            this.getStatusFromDevice(callback);
+            this.getStatusFromDevice(callback, silent);
         }
     },
 
-    getStatusFromDevice(callback) {
-        this.log("Getting status from device");
+    getStatusFromDevice(callback, silent) {
+        if (!silent) this.log("Getting status from device");
 
         this.cache.set(STATUS, "fetching");
 
@@ -131,11 +137,11 @@ BghSmart.prototype = {
         this.targetMode = mode;
         this.targetTemperature = temperature;
 
-        clearTimeout(this.timer);
+        clearTimeout(this.requestTimer);
 
         let that = this;
 
-        this.timer = setTimeout(() => {
+        this.requestTimer = setTimeout(() => {
             let targetMode = that.targetMode;
             let targetTemperature = that.targetTemperature;
 
@@ -230,6 +236,27 @@ BghSmart.prototype = {
         this.log("setTemperatureDisplayUnits(%s)", value);
         this.temperatureDisplayUnits = value;
         callback(null);
+    },
+
+    autoRefresh() {
+        if (this.autoRefreshEnabled) {
+            this.log.debug("Autorefresh triggered");
+
+            clearTimeout(this.refreshTimer);
+
+            this.refreshTimer = setTimeout(function() {
+                this.getStatus(function (error, status) {
+                    if (!error) {
+                        this.thermostatService.getCharacteristic(Characteristic.CurrentHeatingCoolingState).updateValue(status.heatingCoolingState);
+                        this.thermostatService.getCharacteristic(Characteristic.TargetHeatingCoolingState).updateValue(status.targetHeatingCoolingState);
+                        this.thermostatService.getCharacteristic(Characteristic.CurrentTemperature).updateValue(status.temperature);
+                        this.thermostatService.getCharacteristic(Characteristic.TargetTemperature).updateValue(status.targetTemperature);
+                    }
+                }.bind(this), true);
+
+                this.autoRefresh()
+            }.bind(this), 60000)
+        }
     },
 
     getServices() {
