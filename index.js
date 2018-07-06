@@ -232,22 +232,6 @@ BghSmart.prototype = {
         callback(null);
     },
 
-    fromCelsiustoDisplayUnit(value) {
-        if (this.temperatureDisplayUnits === Characteristic.TemperatureDisplayUnits.FARENHEIT) {
-            return (value - 32) / 1.8;
-        } else {
-            return value;
-        }
-    },
-
-    fromDisplayUnitToCelsius(value) {
-        if (this.temperatureDisplayUnits === Characteristic.TemperatureDisplayUnits.FARENHEIT) {
-            return (1.8 * value) + 32;
-        } else {
-            return value;
-        }
-    },
-
     getServices() {
         let informationService = new Service.AccessoryInformation()
             .setCharacteristic(Characteristic.Manufacturer, this.characteristicManufacturer)
@@ -271,12 +255,21 @@ BghSmart.prototype = {
         this.thermostatService
             .getCharacteristic(Characteristic.TargetTemperature)
             .on('get', this.getTargetTemperature.bind(this))
-            .on('set', this.setTargetTemperature.bind(this));
+            .on('set', this.setTargetTemperature.bind(this))
+            .setProps({
+                maxValue: 30,
+                minValue: 17
+            });
 
         this.thermostatService
             .getCharacteristic(Characteristic.TemperatureDisplayUnits)
             .on('get', this.getTemperatureDisplayUnits.bind(this))
-            .on('set', this.setTemperatureDisplayUnits.bind(this));
+            .on('set', this.setTemperatureDisplayUnits.bind(this))
+            .setProps({
+                maxValue: 0,
+                minValue: 0,
+                validValues: [0]
+            });
 
         return [informationService, this.thermostatService];
     }
