@@ -285,7 +285,8 @@ BghSmart.prototype = {
             .on('set', this.setTargetTemperature.bind(this))
             .setProps({
                 maxValue: 30,
-                minValue: 17
+                minValue: 17,
+                minStep: 1
             });
 
         this.thermostatService
