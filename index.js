@@ -18,38 +18,21 @@ function BghSmart(log, config) {
     this.log(this.name);
 
     this.device = new lib.Device();
-    this.characteristicManufacturer = this.device.getDeviceManufacturer();
-    this.characteristicModel = this.device.getDeviceModel();
-    this.characteristicSerialNumber = this.device.getSerialNumber();
     this.device.setHomeId(config.homeId);
     this.device.setDeviceId(config.deviceId);
+    this.autoRefreshEnabled = config.autoRefreshEnabled || true;
+    this.cacheTTL = config.pollingInterval || 5;
 
-    let that = this;
-    this.device.login(config.email, config.password)
-        .then(() => {
-            this.device.getStatus()
-                .then(data => {
-                    that.characteristicManufacturer = that.device.getDeviceManufacturer();
-                    that.characteristicModel = that.device.getDeviceModel();
-                    that.characteristicSerialNumber = that.device.getSerialNumber();
-                })
-                .catch(err => {
-
-                })
-        }).catch((err) => {
-    });
-
-    this.autoRefreshEnabled = config.autoRefreshEnabled | true;
-    this.refreshTimer;
     this.requestTimer;
     this.targetTemperature;
     this.targetMode;
-    this.cache = new nodeCache({stdTTL: 30, checkPeriod: 5, useClones: false});
-    this.temperatureDisplayUnits = Characteristic.TemperatureDisplayUnits.CELSIUS;
 
+    this.cache = new nodeCache({stdTTL: this.cacheTTL, checkperiod: 2, useClones: false});
+    this.temperatureDisplayUnits = Characteristic.TemperatureDisplayUnits.CELSIUS;
+    this.informationService = new Service.AccessoryInformation();
     this.thermostatService = new Service.Thermostat(this.name);
 
-    this.autoRefresh();
+    this.init(config);
 }
 
 BghSmart.prototype = {
@@ -59,40 +42,30 @@ BghSmart.prototype = {
         callback(null);
     },
 
-    getStatus(callback, silent) {
+    getStatus() {
         this.log.debug("Getting status");
-
-        let status = this.cache.get(STATUS);
-
-        if (status) {
-            if (status === "fetching") {
-                let that = this;
-
-                setTimeout(() => that.getStatus(callback), 1000);
-            } else {
-                callback(null, status);
-            }
-        } else {
-            this.getStatusFromDevice(callback, silent);
-        }
+        return this.cache.get(STATUS);
     },
 
-    getStatusFromDevice(callback, silent) {
-        if (!silent) this.log("Getting status from device");
-
-        this.cache.set(STATUS, "fetching");
+    getStatusFromDevice(silent) {
+        if (!silent) {
+            this.log("Getting status from device");
+        } else {
+            this.log.debug("Getting status from device");
+        }
 
         let MODE = lib.MODE;
 
-        let currentState = {
-            heatingCoolingState: Characteristic.CurrentHeatingCoolingState.OFF,
-            targetHeatingCoolingState: Characteristic.TargetHeatingCoolingState.OFF,
-            temperature: null,
-            targetTemperature: null
-        };
-
-        this.device.getStatus()
+        return this.device.getStatus()
             .then(status => {
+                let currentState = {
+                    temperature: status.temperature,
+                    targetTemperature: status.targetTemperature,
+                    heatingCoolingState: Characteristic.CurrentHeatingCoolingState.OFF,
+                    targetHeatingCoolingState: Characteristic.TargetHeatingCoolingState.OFF,
+                    error: null
+                };
+
                 switch (status.modeId) {
                     case MODE.COOL:
                         currentState.heatingCoolingState = Characteristic.TargetHeatingCoolingState.COOL;
@@ -106,30 +79,29 @@ BghSmart.prototype = {
                         currentState.heatingCoolingState = Characteristic.TargetHeatingCoolingState.AUTO;
                         currentState.targetHeatingCoolingState = Characteristic.TargetHeatingCoolingState.AUTO;
                         break;
-                    default:
-                        currentState.heatingCoolingState = Characteristic.TargetHeatingCoolingState.OFF;
-                        currentState.targetHeatingCoolingState = Characteristic.TargetHeatingCoolingState.OFF;
-                        break;
                 }
-
-                currentState.temperature = status.temperature;
-                currentState.targetTemperature = status.targetTemperature;
 
                 this.cache.set(STATUS, currentState);
 
-                callback(null, currentState);
-
                 this.targetMode = currentState.heatingCoolingState;
                 this.targetTemperature = currentState.targetTemperature;
-            }).catch(error => {
-            callback(error);
 
-            this.log("Failed getting status");
-            this.cache.del(STATUS);
-        });
+                this.log.debug('Got status', JSON.stringify(currentState));
+
+                return currentState;
+            })
+            .catch(error => {
+                this.log.error("Failed getting status");
+                this.log.debug(error);
+                this.cache.del(STATUS);
+
+                return {
+                    error: error
+                }
+            })
     },
 
-    setStatusToDevice(mode, temperature, callback) {
+    setStatusToDevice(mode, temperature) {
         this.log("Received new status, mode=%s, temperature=%s", mode, temperature);
 
         this.cache.del(STATUS);
@@ -163,7 +135,7 @@ BghSmart.prototype = {
                     that.device.setMode(targetTemperature, MODE.COOL);
                     break;
                 default:
-                    that.log("Not handled state:", targetMode);
+                    that.log.warn("Not handled state:", targetMode);
                     break;
             }
 
@@ -176,48 +148,26 @@ BghSmart.prototype = {
             that.thermostatService.getCharacteristic(Characteristic.TargetTemperature)
                 .updateValue(targetTemperature);
         }, 2000);
-
-        callback(null);
     },
 
     getCurrentHeatingCoolingState(callback) {
-        this.getStatus((error, status) => {
-            if (error) {
-                callback(error);
-            } else {
-                callback(null, status.heatingCoolingState);
-            }
-        });
+        let status = this.getStatus();
+        callback(status.error, status.heatingCoolingState);
     },
 
     getTargetHeatingCoolingState(callback) {
-        this.getStatus((error, status) => {
-            if (error) {
-                callback(error);
-            } else {
-                callback(null, status.targetHeatingCoolingState);
-            }
-        });
+        let status = this.getStatus();
+        callback(status.error, status.targetHeatingCoolingState);
     },
 
     getCurrentTemperature(callback) {
-        this.getStatus((error, status) => {
-            if (error) {
-                callback(error);
-            } else {
-                callback(null, status.temperature);
-            }
-        });
+        let status = this.getStatus();
+        callback(status.error, status.temperature);
     },
 
     getTargetTemperature(callback) {
-        this.getStatus((error, status) => {
-            if (error) {
-                callback(error);
-            } else {
-                callback(null, status.targetTemperature);
-            }
-        });
+        let status = this.getStatus();
+        callback(status.error, status.targetTemperature);
     },
 
     getTemperatureDisplayUnits(callback) {
@@ -225,11 +175,19 @@ BghSmart.prototype = {
     },
 
     setTargetHeatingCoolingState(targetMode, callback) {
-        this.setStatusToDevice(targetMode, this.targetTemperature, callback);
+        if (this.targetMode !== targetMode) {
+            this.setStatusToDevice(targetMode, this.targetTemperature)
+        }
+
+        callback();
     },
 
     setTargetTemperature(targetTemperature, callback) {
-        this.setStatusToDevice(this.targetMode, targetTemperature, callback);
+        if (this.targetTemperature !== targetTemperature) {
+            this.setStatusToDevice(this.targetMode, targetTemperature);
+        }
+
+        callback();
     },
 
     setTemperatureDisplayUnits(value, callback) {
@@ -238,33 +196,37 @@ BghSmart.prototype = {
         callback(null);
     },
 
-    autoRefresh() {
+    async init(config) {
+        await this.device.login(config.email, config.password);
+        await this.device.getStatus();
+
+        this.informationService.getCharacteristic(Characteristic.Manufacturer).updateValue(this.device.getDeviceManufacturer());
+        this.informationService.getCharacteristic(Characteristic.Model).updateValue(this.device.getDeviceModel());
+        this.informationService.getCharacteristic(Characteristic.SerialNumber).updateValue(this.device.getSerialNumber());
+
         if (this.autoRefreshEnabled) {
-            this.log.debug("Autorefresh triggered");
+            this.log.debug("Setting up auto refresh");
 
-            clearTimeout(this.refreshTimer);
+            this.cache.on('expired', key => {
+                this.log.debug(key, 'expired');
 
-            this.refreshTimer = setTimeout(function() {
-                this.getStatus(function (error, status) {
-                    if (!error) {
-                        this.thermostatService.getCharacteristic(Characteristic.CurrentHeatingCoolingState).updateValue(status.heatingCoolingState);
-                        this.thermostatService.getCharacteristic(Characteristic.TargetHeatingCoolingState).updateValue(status.targetHeatingCoolingState);
-                        this.thermostatService.getCharacteristic(Characteristic.CurrentTemperature).updateValue(status.temperature);
-                        this.thermostatService.getCharacteristic(Characteristic.TargetTemperature).updateValue(status.targetTemperature);
-                    }
-                }.bind(this), true);
+                let status = this.getStatusFromDevice(true);
 
-                this.autoRefresh()
-            }.bind(this), 60000)
+                if (status && !status.error) {
+                    this.thermostatService.getCharacteristic(Characteristic.CurrentHeatingCoolingState).updateValue(status.heatingCoolingState);
+                    this.thermostatService.getCharacteristic(Characteristic.TargetHeatingCoolingState).updateValue(status.targetHeatingCoolingState);
+                    this.thermostatService.getCharacteristic(Characteristic.CurrentTemperature).updateValue(status.temperature);
+                    this.thermostatService.getCharacteristic(Characteristic.TargetTemperature).updateValue(status.targetTemperature);
+                } else {
+                    this.cache.emit('expired', key);
+                }
+            });
+
+            this.getStatusFromDevice();
         }
     },
 
     getServices() {
-        let informationService = new Service.AccessoryInformation()
-            .setCharacteristic(Characteristic.Manufacturer, this.characteristicManufacturer)
-            .setCharacteristic(Characteristic.Model, this.characteristicModel)
-            .setCharacteristic(Characteristic.SerialNumber, this.characteristicSerialNumber);
-
         // Required
         this.thermostatService
             .getCharacteristic(Characteristic.CurrentHeatingCoolingState)
@@ -299,6 +261,6 @@ BghSmart.prototype = {
                 validValues: [0]
             });
 
-        return [informationService, this.thermostatService];
+        return [this.informationService, this.thermostatService];
     }
 };
