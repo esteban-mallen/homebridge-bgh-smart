@@ -44,7 +44,7 @@ BghSmart.prototype = {
 
     getStatus() {
         this.log.debug("Getting status");
-        return this.cache.get(STATUS);
+        return this.cache.get(STATUS) || this.getStatusFromDevice();
     },
 
     getStatusFromDevice(silent) {
