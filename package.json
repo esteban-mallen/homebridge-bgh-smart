@@ -7,10 +7,12 @@
   "description": "BGH Smart Control plugin for homebridge",
   "main": "index.js",
   "author": "Sergio Behrends <sergio@behrends.com.ar>",
-  "contributors": [{
-    "name": "Roberto González",
-    "email": "robert@aerolab.co"
-  }],
+  "contributors": [
+    {
+      "name": "Roberto González",
+      "email": "robert@aerolab.co"
+    }
+  ],
   "license": "MIT",
   "dependencies": {
     "request": "^2.87.0",
@@ -19,5 +21,9 @@
   "engines": {
     "node": ">=0.12.0",
     "homebridge": ">=0.2.0"
+  },
+  "devDependencies": {
+    "homebridge": "^0.4.45",
+    "hap-nodejs": "^0.4.47"
   }
 }
