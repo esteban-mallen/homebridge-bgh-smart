@@ -5,7 +5,7 @@
     "BGH",
     "Smart Kit"
   ],
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "BGH Smart Control plugin for homebridge",
   "main": "index.js",
   "author": "Esteban Mallen",
