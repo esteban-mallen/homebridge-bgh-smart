@@ -1,13 +1,23 @@
 {
-  "name": "homebridge-bgh-smart",
+  "name": "homebridge-bgh-smart-stv",
   "keywords": [
-    "homebridge-plugin"
+    "homebridge-plugin",
+    "BGH",
+    "Smart Kit"
   ],
   "version": "0.1.0",
   "description": "BGH Smart Control plugin for homebridge",
   "main": "index.js",
-  "author": "Sergio Behrends <sergio@behrends.com.ar>",
+  "author": "Esteban Mallen",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/esteban-mallen/homebridge-bgh-smart"
+  },
   "contributors": [
+    {
+      "name": "Sergio Behrends",
+      "email": "sergio@behrends.com.ar"
+    },
     {
       "name": "Roberto González",
       "email": "robert@aerolab.co"

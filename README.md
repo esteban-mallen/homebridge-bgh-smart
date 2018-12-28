@@ -4,23 +4,28 @@ A [Homebridge](https://github.com/nfarina/homebridge) plugin for "BGH Smart Cont
 
 It uses https://bgh-services.solidmation.com/ API to interact with your registered devices
 
+### Credits
+- @sbehrends for the BGH API integration and base plugin
+
 ### Installation
 
 ```
-npm install homebridge-bgh-smart -g
+npm install homebridge-bgh-smart-stv -g
 ```
 
 Add to your configuration
 
 ```
 {
-  "accessory": "BGH-Smart",
-  "name": "Accesory Name",
-  "email": "email@domain.com",
-  "password": "password",
-  "deviceName": "Device name in Solidmation",
-  "homeId": "12345",
-  "deviceId": "12345"
+    "accessory": "BGH-Smart",
+    "name": "Top House Frio/Calor",
+    "email": "test@mail.com",
+    "password": "123456",
+    "deviceName": "Air Conditioner Name",
+    "homeId": 123456,
+    "deviceId": 123456,
+    "autoRefreshEnabled": true,
+    "pollingInterval": 3
 }
 ```
 

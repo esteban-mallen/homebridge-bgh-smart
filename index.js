@@ -7,7 +7,7 @@ module.exports = function (homebridge) {
     Service = homebridge.hap.Service;
     Characteristic = homebridge.hap.Characteristic;
 
-    homebridge.registerAccessory("homebridge-bgh-smart", "BGH-Smart", BghSmart);
+    homebridge.registerAccessory("homebridge-bgh-smart-stv", "BGH-Smart", BghSmart);
 };
 
 
@@ -254,12 +254,7 @@ BghSmart.prototype = {
         this.thermostatService
             .getCharacteristic(Characteristic.TemperatureDisplayUnits)
             .on('get', this.getTemperatureDisplayUnits.bind(this))
-            .on('set', this.setTemperatureDisplayUnits.bind(this))
-            .setProps({
-                maxValue: 0,
-                minValue: 0,
-                validValues: [0]
-            });
+            .on('set', this.setTemperatureDisplayUnits.bind(this));
 
         return [this.informationService, this.thermostatService];
     }
