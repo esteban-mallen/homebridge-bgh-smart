@@ -103,7 +103,7 @@ BghSmart.prototype = {
 
     setStatusToDevice(mode, temperature) {
         if (this.targetMode !== mode || this.targetTemperature !== temperature) {
-            this.log("Changing from currentMode=%s to targetMode=%s, and currentTemperature=%s to targetTemperature=%s", this.targetMode, this.targetTemperature, mode, temperature);
+            this.log("Changing from currentMode=%s to targetMode=%s, and currentTemperature=%s to targetTemperature=%s", this.targetMode, mode, this.targetTemperature, temperature);
 
             this.cache.del(STATUS);
 
