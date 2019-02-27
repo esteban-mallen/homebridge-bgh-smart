@@ -102,52 +102,54 @@ BghSmart.prototype = {
     },
 
     setStatusToDevice(mode, temperature) {
-        this.log("Received new status, mode=%s, temperature=%s", mode, temperature);
+        if (this.targetMode !== mode || this.targetTemperature !== temperature) {
+            this.log("Changing from currentMode=%s to targetMode=%s, and currentTemperature=%s to targetTemperature=%s", this.targetMode, this.targetTemperature, mode, temperature);
 
-        this.cache.del(STATUS);
+            this.cache.del(STATUS);
 
-        this.targetMode = mode;
-        this.targetTemperature = temperature;
+            this.targetMode = mode;
+            this.targetTemperature = temperature;
 
-        clearTimeout(this.requestTimer);
+            clearTimeout(this.requestTimer);
 
-        let that = this;
+            let that = this;
 
-        this.requestTimer = setTimeout(() => {
-            let targetMode = that.targetMode;
-            let targetTemperature = that.targetTemperature;
+            this.requestTimer = setTimeout(() => {
+                let targetMode = that.targetMode;
+                let targetTemperature = that.targetTemperature;
 
-            that.log("Setting status to device, targetMode=%s, targetTemperature=%s", targetMode, targetTemperature);
+                that.log("Sending new status to device: targetMode=%s, targetTemperature=%s", targetMode, targetTemperature);
 
-            let MODE = lib.MODE;
+                let MODE = lib.MODE;
 
-            switch (targetMode) {
-                case Characteristic.TargetHeatingCoolingState.OFF:
-                    that.device.turnOff();
-                    break;
-                case Characteristic.TargetHeatingCoolingState.HEAT:
-                    that.device.setMode(targetTemperature, MODE.HEAT);
-                    break;
-                case Characteristic.TargetHeatingCoolingState.AUTO:
-                    that.device.setMode(targetTemperature, MODE.AUTO);
-                    break;
-                case Characteristic.TargetHeatingCoolingState.COOL:
-                    that.device.setMode(targetTemperature, MODE.COOL);
-                    break;
-                default:
-                    that.log.warn("Not handled state:", targetMode);
-                    break;
-            }
+                switch (targetMode) {
+                    case Characteristic.TargetHeatingCoolingState.OFF:
+                        that.device.turnOff();
+                        break;
+                    case Characteristic.TargetHeatingCoolingState.HEAT:
+                        that.device.setMode(targetTemperature, MODE.HEAT);
+                        break;
+                    case Characteristic.TargetHeatingCoolingState.AUTO:
+                        that.device.setMode(targetTemperature, MODE.AUTO);
+                        break;
+                    case Characteristic.TargetHeatingCoolingState.COOL:
+                        that.device.setMode(targetTemperature, MODE.COOL);
+                        break;
+                    default:
+                        that.log.warn("Not handled state:", targetMode);
+                        break;
+                }
 
-            that.thermostatService.getCharacteristic(Characteristic.CurrentHeatingCoolingState)
-                .updateValue(targetMode);
+                that.thermostatService.getCharacteristic(Characteristic.CurrentHeatingCoolingState)
+                    .updateValue(targetMode);
 
-            that.thermostatService.getCharacteristic(Characteristic.TargetHeatingCoolingState)
-                .updateValue(targetMode);
+                that.thermostatService.getCharacteristic(Characteristic.TargetHeatingCoolingState)
+                    .updateValue(targetMode);
 
-            that.thermostatService.getCharacteristic(Characteristic.TargetTemperature)
-                .updateValue(targetTemperature);
-        }, 2000);
+                that.thermostatService.getCharacteristic(Characteristic.TargetTemperature)
+                    .updateValue(targetTemperature);
+            }, 2000);
+        }
     },
 
     getCurrentHeatingCoolingState(callback) {
@@ -175,17 +177,13 @@ BghSmart.prototype = {
     },
 
     setTargetHeatingCoolingState(targetMode, callback) {
-        if (this.targetMode !== targetMode) {
-            this.setStatusToDevice(targetMode, this.targetTemperature)
-        }
+        this.setStatusToDevice(targetMode, this.targetTemperature)
 
         callback();
     },
 
     setTargetTemperature(targetTemperature, callback) {
-        if (this.targetTemperature !== targetTemperature) {
-            this.setStatusToDevice(this.targetMode, targetTemperature);
-        }
+        this.setStatusToDevice(this.targetMode, targetTemperature);
 
         callback();
     },
